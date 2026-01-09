@@ -1,0 +1,3 @@
+streamlit
+streamlit-barcode-reader
+fpdf
