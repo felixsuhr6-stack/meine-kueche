@@ -56,7 +56,7 @@ if 'daten_geladen' not in st.session_state:
 st.sidebar.title("🍎 Küchen-Manager")
 menu = st.sidebar.radio("Navigation", ["📦 Vorrat", "➕ Neu hinzufügen", "📖 Rezepte", "🍳 Kochen", "🛒 Einkaufsliste"])
 
-# --- 1. VORRAT ---
+# --- 1. VORRAT (MIT TAGE-ANZEIGE) ---
 if menu == "📦 Vorrat":
     st.header("🏠 Dein Bestand")
     if not st.session_state.vorrat:
@@ -66,14 +66,37 @@ if menu == "📦 Vorrat":
             artikel_am_ort = [i for i in st.session_state.vorrat if i.get('ort') == ort]
             if artikel_am_ort:
                 with st.expander(f"📍 {ort} ({len(artikel_am_ort)} Artikel)", expanded=True):
+                    # Sortieren nach Datum
+                    artikel_am_ort.sort(key=lambda x: x.get('mhd', '9999-12-31'))
+                    
                     for item in artikel_am_ort:
                         heute = date.today()
-                        mhd_dt = datetime.strptime(item['mhd'], '%Y-%m-%d').date()
-                        tage = (mhd_dt - heute).days
-                        color = "🔴" if tage < 0 else "🟡" if tage <= 7 else "🟢"
+                        try:
+                            mhd_dt = datetime.strptime(item['mhd'], '%Y-%m-%d').date()
+                            tage = (mhd_dt - heute).days
+                        except:
+                            tage = 0
+                        
+                        # Ampel & Text-Logik
+                        if tage < 0:
+                            color = "🔴"
+                            zeit_text = f"Seit {abs(tage)} Tagen abgelaufen!"
+                        elif tage == 0:
+                            color = "🔴"
+                            zeit_text = "Heute fällig!"
+                        elif tage <= 3:
+                            color = "🔴"
+                            zeit_text = f"Nur noch {tage} Tage"
+                        elif tage <= 7:
+                            color = "🟡"
+                            zeit_text = f"Noch {tage} Tage"
+                        else:
+                            color = "🟢"
+                            zeit_text = f"Noch {tage} Tage"
+
                         c1, c2, c3 = st.columns([0.1, 0.7, 0.2])
                         c1.write(color)
-                        c2.write(f"**{item['artikel']}** ({item['menge']} {item['einheit']}) — MHD: {item['mhd']}")
+                        c2.write(f"**{item['artikel']}** ({item['menge']} {item['einheit']}) — {zeit_text} ({item['mhd']})")
                         if c3.button("Löschen", key=f"del_v_{item['artikel']}_{item['mhd']}"):
                             st.session_state.vorrat.remove(item)
                             daten_speichern()
@@ -121,9 +144,41 @@ elif menu == "📖 Rezepte":
             if st.button("Rezept löschen", key=f"rdel_{r}"):
                 del st.session_state.rezepte[r]; daten_speichern(); st.rerun()
 
-# --- 4. KOCHEN ---
+# --- 4. KOCHEN (MIT SMARTEN VORSCHLÄGEN) ---
 elif menu == "🍳 Kochen":
     st.header("🍳 Was kochen wir?")
+    
+    # --- SMART VORSCHLAG LOGIK ---
+    heute = date.today()
+    kritische_zutaten = []
+    
+    # 1. Finde Zutaten, die in <= 7 Tagen ablaufen
+    for item in st.session_state.vorrat:
+        try:
+            mhd_dt = datetime.strptime(item['mhd'], '%Y-%m-%d').date()
+            if (mhd_dt - heute).days <= 7:
+                kritische_zutaten.append(item['artikel'].lower())
+        except: pass
+    
+    # 2. Finde Rezepte, die diese Zutaten nutzen
+    vorschlaege = []
+    if kritische_zutaten:
+        for r_name, zutaten_dict in st.session_state.rezepte.items():
+            # Prüfe ob irgendeine Zutat des Rezepts in der kritischen Liste ist
+            for z_rezept in zutaten_dict.keys():
+                if any(k in z_rezept.lower() for k in kritische_zutaten):
+                    if r_name not in vorschlaege:
+                        vorschlaege.append(r_name)
+    
+    if vorschlaege:
+        st.info(f"💡 **Tipp gegen Verschwendung:** Deine Zutaten laufen bald ab! Koche am besten: **{', '.join(vorschlaege)}**")
+    else:
+        if kritische_zutaten:
+            st.warning("⚠️ Du hast ablaufende Zutaten, aber kein passendes Rezept dafür gespeichert.")
+    
+    st.write("---")
+
+    # --- NORMALE KOCHEN LOGIK ---
     wahl = st.selectbox("Rezept wählen", ["-"] + list(st.session_state.rezepte.keys()))
     if wahl != "-":
         zutaten_req = st.session_state.rezepte[wahl]
@@ -157,8 +212,6 @@ elif menu == "🍳 Kochen":
 # --- 5. EINKAUFSLISTE ---
 elif menu == "🛒 Einkaufsliste":
     st.header("🛒 Deine Einkaufsliste")
-    
-    # Manuelles Hinzufügen
     with st.form("manual_shop"):
         new_item = st.text_input("Was fehlt noch?")
         if st.form_submit_button("Hinzufügen"):
