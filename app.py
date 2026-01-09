@@ -71,13 +71,4 @@ elif menu == "➕ Neu hinzufügen":
         mhd = col2.date_input("MHD", value=date.today())
         
         if st.form_submit_button("Speichern"):
-            st.session_state.vorrat.append({"artikel": name, "menge": menge, "einheit": einheit, "ort": ort, "mhd": str(mhd)})
-            if manual_barcode: st.session_state.barcode_db[manual_barcode] = name
-            daten_speichern()
-            st.success("Gespeichert!")
-
-# (Die restlichen Teile für Rezepte und Kochen bleiben wie gehabt)
-elif menu == "📖 Rezepte":
-    st.write("Hier kannst du deine Rezepte verwalten.")
-elif menu == "🍳 Kochen & Shopping":
-    st.write("Hier siehst du, was du kochen kannst.")
+            st.session_state.vorrat.append({"artikel": name
