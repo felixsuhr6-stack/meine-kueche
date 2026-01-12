@@ -38,13 +38,13 @@ def erstelle_pdf(liste, titel):
 # --- SETUP & DARK MODE ---
 st.set_page_config(page_title="Küchen-Chef Ultra", layout="wide", page_icon="🍎")
 
-# CSS für Dark Mode Injection
 def apply_dark_mode():
     st.markdown("""
     <style>
     .stApp { background-color: #1E1E1E; color: white; }
     div[data-testid="stSidebar"] { background-color: #262730; }
     .stTextInput>div>div>input { color: black; }
+    .stTextArea>div>div>textarea { color: black; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -66,7 +66,15 @@ if st.session_state.haushalt is None:
         if c2.form_submit_button("Registrieren"):
             data = daten_laden()
             if h_name and h_pass and h_name not in data:
-                data[h_name] = {"passwort": hash_passwort(h_pass), "vorrat": [], "rezepte": {}, "einkauf": [], "stats": {"weg": 0, "gegessen": 0}}
+                # Struktur erweitert um "anleitungen"
+                data[h_name] = {
+                    "passwort": hash_passwort(h_pass), 
+                    "vorrat": [], 
+                    "rezepte": {}, 
+                    "anleitungen": {}, 
+                    "einkauf": [], 
+                    "stats": {"weg": 0, "gegessen": 0}
+                }
                 daten_speichern(data); st.success("Erstellt!")
             else: st.warning("Fehler bei Registrierung")
     st.stop()
@@ -75,23 +83,22 @@ if st.session_state.haushalt is None:
 h_name = st.session_state.haushalt
 alle_daten = daten_laden()
 mein_h = alle_daten[h_name]
+
+# Sicherstellen, dass neue Felder existieren (für alte Accounts)
 if "stats" not in mein_h: mein_h["stats"] = {"weg": 0, "gegessen": 0}
+if "anleitungen" not in mein_h: mein_h["anleitungen"] = {}
 
 def save():
     alle_daten[h_name] = mein_h
     daten_speichern(alle_daten)
 
-# --- SIDEBAR (Menü, Umrechner, Dark Mode) ---
+# --- SIDEBAR ---
 st.sidebar.title(f"🏠 {h_name}")
-
-# 1. Dark Mode Toggle
 dark_mode = st.sidebar.checkbox("🌑 Dark Mode", value=False)
 if dark_mode: apply_dark_mode()
 
-# 2. Navigation
 menu = st.sidebar.radio("Menü", ["📦 Vorrat", "➕ Neu", "📖 Rezepte", "🍳 Kochen", "🛒 Einkauf", "📊 Statistik"])
 
-# 3. Umrechner
 with st.sidebar.expander("🧮 Umrechner"):
     wert = st.number_input("Wert", value=100.0)
     von = st.selectbox("Von", ["g", "kg", "ml", "L"])
@@ -103,19 +110,15 @@ with st.sidebar.expander("🧮 Umrechner"):
 if st.sidebar.button("Logout"):
     st.session_state.haushalt = None; st.rerun()
 
-# --- MODUL 1: VORRAT (Mit Sortierung & Smart-Delete) ---
+# --- MODUL 1: VORRAT ---
 if menu == "📦 Vorrat":
     st.header("📦 Dein Vorrat")
-    
-    # Sortier-Schalter
     sort_mode = st.radio("Sortierung:", ["Nach Haltbarkeit (MHD)", "Alphabetisch (A-Z)"], horizontal=True)
-    
     if not mein_h["vorrat"]: st.info("Leer.")
     
     for ort in ORTE:
         items = [i for i in mein_h["vorrat"] if i.get('ort') == ort]
         if items:
-            # Sortier-Logik
             if "MHD" in sort_mode: items.sort(key=lambda x: x.get('mhd', '9999'))
             else: items.sort(key=lambda x: x.get('artikel', '').lower())
 
@@ -126,16 +129,10 @@ if menu == "📦 Vorrat":
                     col1, col2, col3, col4 = st.columns([0.5, 4, 1, 1])
                     col1.write(color)
                     col2.write(f"**{item['artikel']}** ({item['menge']} {item['einheit']}) \n MHD: {item['mhd']} ({days} Tage)")
-                    
-                    # Statistik-Buttons
                     if col3.button("🍽️", key=f"eat_{item['artikel']}_{item['mhd']}"):
-                        mein_h["vorrat"].remove(item)
-                        mein_h["stats"]["gegessen"] += 1
-                        save(); st.rerun()
+                        mein_h["vorrat"].remove(item); mein_h["stats"]["gegessen"] += 1; save(); st.rerun()
                     if col4.button("🗑️", key=f"trash_{item['artikel']}_{item['mhd']}"):
-                        mein_h["vorrat"].remove(item)
-                        mein_h["stats"]["weg"] += 1
-                        save(); st.rerun()
+                        mein_h["vorrat"].remove(item); mein_h["stats"]["weg"] += 1; save(); st.rerun()
 
 # --- MODUL 2: NEU HINZUFÜGEN ---
 elif menu == "➕ Neu":
@@ -151,25 +148,50 @@ elif menu == "➕ Neu":
             mein_h["vorrat"].append({"artikel": name, "menge": menge, "einheit": einheit, "ort": ort, "mhd": str(mhd)})
             save(); st.success("Gespeichert!")
 
-# --- MODUL 3: REZEPTE ---
+# --- MODUL 3: REZEPTE (MIT TEXT) ---
 elif menu == "📖 Rezepte":
     st.header("📖 Rezeptbuch")
-    with st.expander("➕ Neues Rezept"):
+    
+    # Neues Rezept
+    with st.expander("➕ Neues Rezept erstellen", expanded=False):
         rn = st.text_input("Gericht Name")
+        
+        # 1. Zutaten sammeln
+        st.write("**Schritt 1: Zutaten**")
         if 'tmp_z' not in st.session_state: st.session_state.tmp_z = {}
         c1, c2, c3 = st.columns([2,1,1])
         zn = c1.text_input("Zutat")
         zm = c2.number_input("Menge", 0.1)
         if c3.button("Dazu"): st.session_state.tmp_z[zn] = zm; st.rerun()
         st.write(st.session_state.tmp_z)
-        if st.button("Speichern"):
-            mein_h["rezepte"][rn] = st.session_state.tmp_z
-            st.session_state.tmp_z = {}; save(); st.rerun()
+        
+        # 2. Anleitung schreiben
+        st.write("**Schritt 2: Zubereitung**")
+        anleitung_text = st.text_area("Wie kocht man das?", placeholder="Erst Wasser kochen, dann...")
+
+        if st.button("Rezept komplett speichern"):
+            if rn and st.session_state.tmp_z:
+                mein_h["rezepte"][rn] = st.session_state.tmp_z
+                mein_h["anleitungen"][rn] = anleitung_text # Speichere Text separat
+                st.session_state.tmp_z = {}
+                save(); st.rerun()
+            else:
+                st.error("Bitte Namen und Zutaten eingeben.")
             
+    # Liste anzeigen
     for r in mein_h["rezepte"]:
         with st.expander(f"🍽️ {r}"):
+            st.subheader("Zutaten:")
             st.write(mein_h["rezepte"][r])
-            if st.button("Löschen", key=r): del mein_h["rezepte"][r]; save(); st.rerun()
+            
+            st.subheader("Zubereitung:")
+            # Zeige Anleitung oder Standardtext
+            st.info(mein_h["anleitungen"].get(r, "Keine Anleitung gespeichert."))
+            
+            if st.button("Löschen", key=r):
+                del mein_h["rezepte"][r]
+                if r in mein_h["anleitungen"]: del mein_h["anleitungen"][r]
+                save(); st.rerun()
 
 # --- MODUL 4: KOCHEN & REST-O-MAT ---
 elif menu == "🍳 Kochen":
@@ -177,18 +199,19 @@ elif menu == "🍳 Kochen":
     tab1, tab2 = st.tabs(["📝 Rezept-Planer", "🔍 Rest-O-Mat (Suche)"])
     
     with tab1:
-        # MHD Warnung
         bad = [i['artikel'] for i in mein_h["vorrat"] if (datetime.strptime(i['mhd'], '%Y-%m-%d').date() - date.today()).days <= 3]
         if bad: st.warning(f"⚠️ Schnell verbrauchen: {', '.join(bad)}")
         
         wahl = st.selectbox("Rezept wählen", ["-"] + list(mein_h["rezepte"].keys()))
         if wahl != "-":
+            # Zeige Anleitung beim Kochen
+            with st.expander("📜 Zubereitung anzeigen", expanded=True):
+                st.write(mein_h["anleitungen"].get(wahl, "Keine Anleitung verfügbar."))
+            
+            st.write("---")
             req = mein_h["rezepte"][wahl]
-            have = {i['artikel'].lower(): i['menge'] for i in mein_h["vorrat"]} # Vereinfacht
-            # Check Logik (vereinfacht für Übersicht)
             missing = []
             for z, m in req.items():
-                # Finde Zutat im Vorrat (Name enthält Zutat)
                 found = sum([i['menge'] for i in mein_h["vorrat"] if z.lower() in i['artikel'].lower()])
                 if found >= m: st.success(f"✅ {z}")
                 else: 
@@ -209,45 +232,30 @@ elif menu == "🍳 Kochen":
                 mein_h["einkauf"].extend(missing); save(); st.success("Auf Liste gesetzt!")
 
     with tab2:
-        st.subheader("🔍 Was kann ich kochen mit...")
+        st.subheader("🔍 Suche")
         suche = st.text_input("Zutat eingeben (z.B. Eier)")
         if suche:
             hits = [r for r, zut in mein_h["rezepte"].items() if any(suche.lower() in z.lower() for z in zut)]
-            if hits:
-                st.success(f"Gefundene Rezepte: {', '.join(hits)}")
-            else:
-                st.info("Nichts gefunden. Probier eine andere Zutat.")
+            if hits: st.success(f"Gefunden: {', '.join(hits)}")
+            else: st.info("Nichts gefunden.")
 
 # --- MODUL 5: EINKAUF ---
 elif menu == "🛒 Einkauf":
     st.header("🛒 Einkaufsliste")
     new = st.text_input("Neues Item", key="shop_in")
     if st.button("Hinzufügen") and new: mein_h["einkauf"].append(new); save(); st.rerun()
-    
     for item in mein_h["einkauf"]:
         c1, c2 = st.columns([4,1])
         c1.write(f"- {item}")
         if c2.button("✓", key=f"s_{item}"): mein_h["einkauf"].remove(item); save(); st.rerun()
-    
     if mein_h["einkauf"]:
         pdf = erstelle_pdf(mein_h["einkauf"], "Einkaufsliste")
         st.download_button("📄 PDF", pdf, "liste.pdf")
 
 # --- MODUL 6: STATISTIK ---
 elif menu == "📊 Statistik":
-    st.header("📊 Deine Küchen-Bilanz")
-    w = mein_h["stats"]["weg"]
-    g = mein_h["stats"]["gegessen"]
-    total = w + g
-    
+    st.header("📊 Statistik")
+    w = mein_h["stats"]["weg"]; g = mein_h["stats"]["gegessen"]; total = w + g
     c1, c2 = st.columns(2)
-    c1.metric("Gerettete Mahlzeiten", g)
-    c2.metric("Weggeworfen", w)
-    
-    if total > 0:
-        st.progress(g / total)
-        st.caption(f"Du hast {int((g/total)*100)}% deiner Lebensmittel genutzt!")
-        if w > g: st.warning("Versuch, weniger wegzuwerfen! Nutze den Rest-O-Mat.")
-        else: st.balloons(); st.success("Super Quote!")
-    else:
-        st.info("Noch keine Daten. Koche oder lösche etwas, um die Statistik zu starten.")
+    c1.metric("Gerettet", g); c2.metric("Weggeworfen", w)
+    if total > 0: st.progress(g / total)
