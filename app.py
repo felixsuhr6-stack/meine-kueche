@@ -98,30 +98,26 @@ if st.session_state.haushalt is None and not st.session_state.is_admin:
             else: st.error("Zugriff verweigert!")
 
     # NORMALER LOGIN
-    st.subheader("Haushalt Login")
-    with st.form("login_form"):
-        h_name = st.text_input("Haushalts-Name").strip()
-        h_pass = st.text_input("Passwort", type="password")
-        c1, c2 = st.columns(2)
-        
-        if c1.form_submit_button("Anmelden"):
-            if h_name in alle_daten["haushalte"]:
-                if alle_daten["haushalte"][h_name]['passwort'] == hash_passwort(h_pass):
-                    st.session_state.haushalt = h_name
-                    st.rerun()
-                else: st.error("Passwort falsch!")
-            else: st.error("Haushalt nicht gefunden!")
-                
-        if c2.form_submit_button("Registrieren"):
+    if c2.form_submit_button("Registrieren"):
             if h_name and h_pass and h_name not in alle_daten["haushalte"] and h_name != ADMIN_USER:
+                # 1. Account lokal im Programm erstellen
                 alle_daten["haushalte"][h_name] = {
                     "passwort": hash_passwort(h_pass), "vorrat": [], 
                     "wochenplan": {t: "-" for t in TAGE}, "einkauf": [], 
                     "stats": {"weg": 0, "gegessen": 0}, "verlinkt": []
                 }
-                save_all(); st.success("Registriert! Bitte einloggen.")
-            else: st.warning("Name ungültig oder vergeben.")
-    st.stop()
+                
+                # 2. Versuchen an Google zu senden
+                try:
+                    res = requests.post(WEB_APP_URL, json=alle_daten)
+                    if res.status_code == 200:
+                        st.success(f"✅ Account '{h_name}' erfolgreich in der Cloud gespeichert! Bitte jetzt anmelden.")
+                    else:
+                        st.error(f"❌ Google hat die Daten abgelehnt (Fehler {res.status_code}). Hast du 'Jeder' ausgewählt?")
+                except Exception as e:
+                    st.error(f"❌ Verbindung zur Cloud fehlgeschlagen: {e}")
+            else:
+                st.warning("Name ungültig oder existiert bereits.")
 
 # --- SIDEBAR ---
 h_name = st.session_state.haushalt
