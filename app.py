@@ -7,7 +7,7 @@ from datetime import datetime, date
 
 # --- 1. KONFIGURATION ---
 # Deine Google Apps Script URL:
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyh6FaOQeXodvSLfCXFq-dUIP-BHhzqcuItXrbboxsM2FdWCaPa9udeUHv2HEJ5zi4JDg/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz0s1Hu4BvYzI9-Jhml8iI4OiGagRmMyyHU-UwXNFuragMKkYB3pmDW0J3xxqexyNpYNQ/exec"
 
 ORTE = ["Kühlschrank", "Vorratsregal", "Tiefkühler", "Gewürzschrank", "Keller", "Sonstiges"]
 TAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
